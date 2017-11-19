@@ -5,6 +5,7 @@ var url = require('url');
 
 // Npm packages
 var request = require('request');
+var jwt = require('atlassian-jwt');
 
 // Custom packages
 var applicationProperties = require('./api/application-properties');
@@ -180,6 +181,14 @@ var JiraClient = module.exports = function (config) {
                 pass: config.basic_auth.password
             };
         }
+    } else if (config.jwt) {
+      if (!config.jwt.iss) {
+        throw new Error(errorStrings.NO_JWT_ISSUER);
+      }
+      if (!config.jwt.shared_secret) {
+        throw new Error(errorStrings.NO_JWT_SHARED_SECRET);
+      }
+      this.jwtConfig = config.jwt;
     }
 
     if (config.cookie_jar) {
@@ -344,6 +353,18 @@ var JiraClient = module.exports = function (config) {
             } else {
               options.auth = this.basic_auth;
             }
+        } else if (this.jwtConfig) {
+          console.log(options)
+          var now = Math.round(Date.now()/1000)
+          var jwt_payload = {
+            'iss': this.jwtConfig.iss,
+            'iat': this.jwtConfig.iat || now,
+            'exp': this.jwtConfig.exp || now + 3600,
+            'qsh': jwt.createQueryStringHash({method: options.method, originalUrl: options.uri})
+          };
+          options.headers = {
+            Authorization: 'JWT ' + jwt.encode(jwt_payload, this.jwtConfig.shared_secret)
+          };
         }
         if (this.cookie_jar) {
             options.jar = this.cookie_jar;
