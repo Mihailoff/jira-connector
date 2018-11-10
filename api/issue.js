@@ -1115,6 +1115,42 @@ function IssueClient(jiraClient) {
         return this.jiraClient.makeRequest(options, callback, 'Property Deleted');
     };
 
+    this.setWorklogProperty = function (opts, callback) {
+        if (!opts.propertyKey) {
+            throw new Error(errorStrings.NO_PROPERTY_KEY_ERROR);
+        } else if (!opts.propertyValue) {
+            throw new Error(errorStrings.NO_PROPERTY_VALUE_ERROR);
+        }
+      var options = this.buildRequestOptions(
+        opts,
+        '/worklog/' + opts.worklogId + '/properties/' + opts.propertyKey,
+        'PUT',
+        opts.propertyValue
+      );
+      return this.jiraClient.makeRequest(options, callback, 'Property Set');
+    };
+
+    this.getWorkLogProperties = function (opts, callback) {
+      var options = this.buildRequestOptions(
+        opts,
+        '/worklog/' + opts.worklogId + '/properties/',
+        'GET'
+      );
+      return this.jiraClient.makeRequest(options, callback);
+    };
+
+    this.getWorkLogProperty = function (opts, callback) {
+      if (!opts.propertyKey) {
+          throw new Error(errorStrings.NO_PROPERTY_KEY_ERROR);
+      }
+      var options = this.buildRequestOptions(
+        opts,
+        '/worklog/' + opts.worklogId + '/properties/' + opts.propertyKey,
+        'GET'
+      );
+      return this.jiraClient.makeRequest(options, callback);
+    };
+
     /**
      * Build out the request options necessary to make a particular API call.
      *
@@ -1166,5 +1202,53 @@ function IssueClient(jiraClient) {
             json: true
         };
     }
+    
+    /**
+     * Returns suggested issues which match the auto-completion query for the 
+     * user which executes this request. This REST method will check the user's 
+     * history and the user's browsing context and select this issues, which 
+     * match the query.
+     *
+     * @method getIssuePicker
+     * @memberOf IssueClient#
+     * @param {Object} opts The options to pass to the API.
+     * @param {string} [opts.query] the query
+     * @param {string} [opts.currentJQL] the JQL in context of which the request 
+     *                 is executed. Only issues which match this JQL query will be 
+     *                 included in results.
+     * @param {string} [opts.currentIssueKey] the key of the issue in context of 
+     *                 which the request is executed. The issue which is in context 
+     *                 will not be included in the auto-completion result, even if 
+     *                 it matches the query.
+     * @param {string} [opts.currentProjectId] the id of the project in context of 
+     *                 which the request is executed. Suggested issues will be only 
+     *                 from this project.
+     * @param {boolean} [opts.showSubTasks] if set to false, subtasks will not be 
+     *                  included in the list.
+     * @param {boolean} [opts.showSubTaskParent] if set to false and request is 
+     *                  executed in context of a subtask, the parent issue will 
+     *                  not be included in the auto-completion result, even if it 
+     *                  matches the query.
+     * @param [callback] Called when the issues have been retrieved.
+     * @return {Promise} Resolved when the issues have been retrieved.
+     */
+    this.getIssuePicker = function (opts, callback) {
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/picker'),
+            method: 'GET',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                query: opts.query,
+                currentJQL: opts.currentJQL,
+                currentIssueKey: opts.currentIssueKey,
+                currentProjectId: opts.currentProjectId,
+                showSubTasks: opts.showSubTasks,
+                showSubTaskParent: opts.showSubTaskParent
+            }
+        };
+
+        return this.jiraClient.makeRequest(options, callback);
+    };
 
 }
