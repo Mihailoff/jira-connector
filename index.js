@@ -365,7 +365,6 @@ var JiraClient = module.exports = function (config) {
               options.auth = this.basic_auth;
             }
         } else if (this.jwtConfig) {
-          console.log(options)
           var now = Math.round(Date.now()/1000)
           var jwt_payload = {
             'iss': this.jwtConfig.iss,
