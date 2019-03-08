@@ -370,7 +370,7 @@ var JiraClient = module.exports = function (config) {
             'iss': this.jwtConfig.iss,
             'iat': this.jwtConfig.iat || now,
             'exp': this.jwtConfig.exp || now + 3600,
-            'qsh': jwt.createQueryStringHash({method: options.method, originalUrl: options.uri})
+            'qsh': jwt.createQueryStringHash({method: options.method, originalUrl: options.uri, query: options.qs})
           };
           options.headers = {
             Authorization: 'JWT ' + jwt.encode(jwt_payload, this.jwtConfig.shared_secret)
