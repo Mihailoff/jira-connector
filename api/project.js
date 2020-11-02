@@ -16,12 +16,56 @@ function ProjectClient(jiraClient) {
      *
      * @method getAllProjects
      * @memberOf ProjectClient#
-     * @param opts The request options sent to the Jira API.
-     * @param [callback] Called when the projects have been retrieved.
+     * @param {Object} [opts] The request options sent to the Jira API.
+     * @param {string} [opts.expand]
+     * @param {number} [opts.recent]
+     * @param {Array<string>} [opts.properties]
+     * @param {callback} [callback] Called when the projects have been retrieved.
      * @return {Promise} Resolved when the projects have been retrieved.
      */
     this.getAllProjects = function (opts, callback) {
-        var options = this.buildRequestOptions(opts, '', 'GET');
+        opts = opts || {};
+        var options = {
+            uri: this.jiraClient.buildURL('/project', opts.apiVersion),
+            method: 'GET',
+            followAllRedirects: true,
+            json: true,
+            qs: {
+                expand: opts.expand,
+                recent: opts.recent,
+                properties: opts.properties && opts.properties.join(',')
+            }
+        };
+
+        return this.jiraClient.makeRequest(options, callback);
+    };
+
+    this.updateProject = function(opts, callback) {
+        var options = {
+            uri: this.jiraClient.buildURL('/project/' + opts.projectIdOrKey),
+            method: 'PUT',
+            followAllRedirects: true,
+            json: true,
+            qs: {
+                expand: opts.expand
+            },
+            body: {
+                key: opts.key,
+                name: opts.name,
+                projectTypeKey: opts.projectTypeKey,
+                projectTemplateKey: opts.projectTemplateKey,
+                description: opts.description,
+                lead: opts.lead,
+                leadAccountId: opts.leadAccountId,
+                url: opts.url,
+                assigneeType: opts.assigneeType,
+                avatarId: opts.avatarId,
+                issueSecurityScheme: opts.issueSecurityScheme,
+                permissionScheme: opts.permissionScheme,
+                notificationScheme: opts.notificationScheme,
+                categoryId: opts.categoryId
+            }
+        };
 
         return this.jiraClient.makeRequest(options, callback);
     };
@@ -36,7 +80,7 @@ function ProjectClient(jiraClient) {
      * @param [callback] Called when the project has been deleted.
      * @return {Promise} Resolved when the project has been deleted.
      */
-    this.deleteProject = function(opts, callback) {
+    this.deleteProject = function (opts, callback) {
         var options = this.buildRequestOptions(opts, '', 'DELETE');
         return this.jiraClient.makeRequest(options, callback, 'Project Deleted');
     };
@@ -51,6 +95,7 @@ function ProjectClient(jiraClient) {
      * @return {Promise} Resolved when the project has been created.
      */
     this.createProject = function (project, callback) {
+       
         var options = {
             uri: this.jiraClient.buildURL('/project'),
             method: 'POST',
@@ -76,9 +121,6 @@ function ProjectClient(jiraClient) {
         var options = this.buildRequestOptions(opts, '/properties', 'GET');
         return this.jiraClient.makeRequest(options, callback);
     };
-
-
-
 
     /**
      * Contains a full representation of a project in JSON format.
@@ -139,6 +181,34 @@ function ProjectClient(jiraClient) {
      */
     this.getVersions = function (opts, callback) {
         var options = this.buildRequestOptions(opts, '/versions', 'GET');
+        return this.jiraClient.makeRequest(options, callback);
+    };
+
+    /**
+     * Contains a paginated representation of a the specified project's versions.
+     *
+     * @method getVersionsPaginated
+     * @memberOf ProjectClient#
+     * @param {Object} opts The request options sent to the Jira API.
+     * @param {string} opts.projectIdOrKey The project id or project key
+     * @param {number} [opt.startAt] The index of the first item to return in a page of results
+     * @param {number} [opt.maxResults] The maximum number of items to return per page
+     * @param {string} [opt.orderBy] Order the results by a field
+     * @param {string} [opt.query] Filter the results using a literal string. Versions with matching name or description are returned (case insensitive).
+     * @param {string} [opt.status] A list of status values used to filter the results by version status
+     * @param {Array}  [opt.expand] The fields to expand
+     * @param {callback} [callback] Called when the paginated representation of all versions have been retrieved.
+     * @return {Promise} Resolved when the paginated representation of all versions have been retrieved.
+     */
+    this.getVersionsPaginated = function (opts, callback) {
+        var qs = {
+            startAt: opts.startAt,
+            maxResults: opts.maxResults,
+            orderBy: opts.orderBy,
+            query: opts.query,
+            status: opts.status
+        }
+        var options = this.buildRequestOptions(opts, '/version', 'GET', {}, qs);
         return this.jiraClient.makeRequest(options, callback);
     };
 
