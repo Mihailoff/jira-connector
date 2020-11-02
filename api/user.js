@@ -20,10 +20,11 @@ function UserClient(jiraClient) {
      * @method getUser
      * @memberOf UserClient#
      * @param opts The request options sent to the Jira API
-     * @param opts.username The name of the user to retrieve.
-     * @param opts.userKey The key of the user to retrieve.
-     * @param {Object} opts.expand The fields to be expanded.
-     * @param [callback] Called when the user has been retrieved.
+     * @param {string} [opts.accountId] The account ID of the user
+     * @param {string} [opts.username] The name of the user to retrieve.
+     * @param {string} [opts.userKey] The key of the user to retrieve.
+     * @param {string} [opts.expand] The fields to be expanded.
+     * @param {callback} [callback] Called when the user has been retrieved.
      * @return {Promise} Resolved when the user has been retrieved.
      */
     this.getUser = function (opts, callback) {
@@ -33,6 +34,7 @@ function UserClient(jiraClient) {
             json: true,
             followAllRedirects: true,
             qs: {
+                accountId: opts.accountId,
                 username: opts.username,
                 key: opts.userKey,
                 expand: opts.expand
@@ -261,7 +263,7 @@ function UserClient(jiraClient) {
             qs: {
                 username: opts.username
             },
-            body: {id: opts.avatarId},
+            body: { id: opts.avatarId },
             headers: {
                 "X-Atlassian-Token": 'no-check'
             }
@@ -505,8 +507,10 @@ function UserClient(jiraClient) {
      *
      * @method search
      * @memberOf UserClient#
-     * @param {Object} opts The request options sent to the Jira API.
-     * @param {string} opts.username A query string used to search username, name or e-mail address
+     * @param {Object} [opts] The request options sent to the Jira API.
+     * @param {string} [opts.query]
+     * @param {string} [opts.username] A query string used to search username, name or e-mail address
+     * @param {string} [opts.accountId]
      * @param {number} [opts.startAt=0] the index of the first user to return (0-based)
      * @param {number} [opts.maxResults=50] the maximum number of users to return (defaults to 50). The maximum allowed
      *     value is 1000. If you specify a value that is higher than this number, your search results will be
@@ -514,23 +518,55 @@ function UserClient(jiraClient) {
      * @param {boolean} [opts.includeActive=true] If true, then active users are included in the results (default true)
      * @param {boolean} [opts.includeInactive=false] If true, then inactive users are included in the results (default
      *     false)
-     * @param [callback] Called when the search results are retrieved.
+     * @param {string} [opts.property]
+     * @param {callback} [callback] Called when the search results are retrieved.
      * @return {Promise} Resolved when the search results are retrieved.
      */
     this.search = function (opts, callback) {
+        opts = opts || {};
+
         var options = {
             uri: this.jiraClient.buildURL('/user/search'),
             method: 'GET',
             json: true,
             followAllRedirects: true,
             qs: {
+                query: opts.query,
                 username: opts.username,
-                maxResults: opts.maxResults,
+                accountId: opts.accountId,
                 startAt: opts.startAt,
+                maxResults: opts.maxResults,
                 includeActive: opts.includeActive,
-                includeInactive: opts.includeInactive
+                includeInactive: opts.includeInactive,
+                property: opts.property
             }
         };
+        return this.jiraClient.makeRequest(options, callback);
+    };
+
+    /**
+    * Returns a list of users that match the search string. This resource cannot be accessed anonymously.
+    *
+    * @method all
+    * @memberOf UserClient#
+    * @param {Object} opts The request options sent to the Jira API.
+    * @param {number} [opts.startAt=0] the index of the first user to return (0-based)
+    * @param {number} [opts.maxResults=50] the maximum number of users to return (defaults to 50).
+    * @param {callback} [callback] Called when the search results are retrieved.
+    * @return {Promise} Resolved when the search results are retrieved.
+    */
+    this.all = function (opts, callback) {
+        var options = {
+            uri: this.jiraClient.buildURL('/users/search'),
+            method: 'GET',
+            followAllRedirects: true,
+            json: true,
+            qs: {
+                maxResults: opts.maxResults,
+                startAt: opts.startAt
+            }
+        };
+
         return this.jiraClient.makeRequest(options, callback);
     };
 

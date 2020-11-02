@@ -1,7 +1,8 @@
 "use strict";
 
-var errorStrings = require('./../lib/error');
 var fs = require('fs');
+var mime = require('mime-types');
+var errorStrings = require('./../lib/error');
 
 module.exports = IssueClient;
 
@@ -24,7 +25,7 @@ function IssueClient(jiraClient) {
      *        object must contain EITHER an issueId or issueKey property;
      *        issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
-     * @param {string} [opts.issueKey] The Key of teh issue.  EX: JWR-3
+     * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
      * @param {string} [opts.boardId] The id of the board required to
      *        determine which field is used for estimation.
      * @param [callback] Called when the issue estimation has been retrieved.
@@ -79,7 +80,7 @@ function IssueClient(jiraClient) {
                 maxResults: opts.maxResults
             },
             qs: {
-              boardId: opts.boardId
+                boardId: opts.boardId
             }
         };
 
@@ -295,7 +296,7 @@ function IssueClient(jiraClient) {
      * @return {Promise} Resolved when data has been retrieved
      */
     this.deleteIssue = function (opts, callback) {
-        var options = this.buildRequestOptions(opts, '', 'DELETE', null, {deleteSubtasks: opts.deleteSubtasks});
+        var options = this.buildRequestOptions(opts, '', 'DELETE', null, { deleteSubtasks: opts.deleteSubtasks });
 
         return this.jiraClient.makeRequest(options, callback, 'Issue Deleted');
     };
@@ -319,15 +320,35 @@ function IssueClient(jiraClient) {
      *        issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {Object} opts.issue See {@link https://docs.atlassian.com/jira/REST/latest/#d2e656}
-     * @param [callback] Called when data has been retrieved
+     * @param {boolean} [opts.notifyUsers]
+     * @param {boolean} [opts.overrideScreenSecurity]
+     * @param {boolean} [opts.overrideEditableFlag]
+     * @param {Object} [opts.issue] See {@link https://docs.atlassian.com/jira/REST/latest/#d2e656}
+     * @param {Object} [opts.issue.transition]
+     * @param {Object} [opts.issue.fields]
+     * @param {Object} [opts.issue.update]
+     * @param {Object} [opts.issue.historyMetadata]
+     * @param {Object} [opts.issue.properties]
+     * @param {callback} [callback] Called when data has been retrieved
      * @return {Promise} Resolved when data has been retrieved
      */
     this.editIssue = function (opts, callback) {
-        if (!opts.issue) {
-            throw new Error(errorStrings.NO_ISSUE_ERROR);
-        }
-        var options = this.buildRequestOptions(opts, '', 'PUT', opts.issue, opts.qs);
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey)),
+            method: 'PUT',
+            json: true,
+            followAllRedirects: true,
+            qs: Object.assign(
+                {},
+                opts,
+                {
+                    issueKey: undefined,
+                    issueId: undefined,
+                    issue: undefined
+                }
+            ),
+            body: opts.issue || opts.body
+        };
 
         return this.jiraClient.makeRequest(options, callback, 'Issue Updated');
     };
@@ -335,25 +356,26 @@ function IssueClient(jiraClient) {
     /**
      * Assigns an issue to a user. You can use this resource to assign issues when the user submitting the request has
      * the assign permission but not the edit issue permission. If the name is "-1" automatic assignee is used. A null
-     * name will remove the assignee.
-     *
+     * name will remove the assignee. or
+     * You can use accountId of the user whom to assign the issue.
+     * See {@link https://developer.atlassian.com/cloud/jira/platform/deprecation-notice-user-privacy-api-migration-guide/}
      * @method assignIssue
      * @memberof IssueClient#
-     * @param {Object} opts The options to pass to the API.  Note that this object must contain EITHER an issueId or
-     *        issueKey property; issueId will be used over issueKey if both are present.
+     * @param {Object} opts use assignee name or accountId to assign the issue 
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {string} opts.assignee The name of the user to whom to assign the issue. -1 for default, null for no
-     *     assignee.
+     * @param {string} [opts.assignee] The name of the user to whom to assign the issue
+     * @param {string} [opts.accountId] The accountId of the user to whom to assign the issue. -1 for default, null for no assignee.
      * @param [callback] Called when the issue has been assigned.
      * @return {Promise} Resolved when the issue has been assigned.
      */
     this.assignIssue = function (opts, callback) {
-        if (!(typeof opts.assignee === "string" && opts.assignee.length || opts.assignee === null)) {
+        var assigneeIdOrName = opts.accountId || opts.assignee;
+        if (!(typeof assigneeIdOrName === "string" && assigneeIdOrName.length || assigneeIdOrName === null)) {
             throw new Error(errorStrings.NO_ASSIGNEE_ERROR);
         }
-
-        var options = this.buildRequestOptions(opts, '/assignee', 'PUT', {name: opts.assignee});
+        var params = opts.accountId ? { accountId: opts.accountId } : { name: opts.assignee }
+        var options = this.buildRequestOptions(opts, '/assignee', 'PUT', params);
 
         return this.jiraClient.makeRequest(options, callback, 'Issue Assigned');
     };
@@ -386,17 +408,38 @@ function IssueClient(jiraClient) {
      *        issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {Object} opts.comment See {@link https://docs.atlassian.com/jira/REST/latest/#d2e482}
-     * @param [callback] Called when data has been retrieved
+     * @param {string} [opts.expand] Use expand to include additional information about comments
+     * in the response. This parameter accepts renderedBody, which returns the comment body rendered in HTML.
+     * @param {string} [opts.body] The comment text
+     * @param {string} [opts.visibility] The group or role to which this comment is visible. Optional on create and update.
+     * @param {string} [opts.properties] A list of comment properties. Optional on create and update.
+     * @param {callback} [callback] Called when data has been retrieved
      * @return {Promise} Resolved when data has been retrieved
      */
     this.addComment = function (opts, callback) {
-        var options;
-        if(opts.comment.body) {
-            options = this.buildRequestOptions(opts, '/comment', 'POST', opts.comment);
-        } else {
-            options = this.buildRequestOptions(opts, '/comment', 'POST', {body: opts.comment});
-        }
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/comment'),
+            method: 'POST',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                expand: opts.expand
+            },
+            body: Object.assign(
+                {
+                    body: opts.body || opts.comment, // backward compatibility (opts.comment should be removed in next major version)
+                    visibility: opts.visibility,
+                    properties: opts.properties,
+                },
+                opts,
+                {
+                    expand: undefined,
+                    comment: undefined,
+                    issueId: undefined,
+                    issueKey: undefined
+                }
+            )
+        };
 
         return this.jiraClient.makeRequest(options, callback);
     };
@@ -462,10 +505,12 @@ function IssueClient(jiraClient) {
      * @return {Promise} Resolved when the comment is retrieved.
      */
     this.deleteComment = function (opts, callback) {
-        if (!opts.commentId) {
-            throw new Error(errorStrings.NO_COMMENT_ID);
-        }
-        var options = this.buildRequestOptions(opts, '/comment/' + opts.commentId, 'DELETE');
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/comment/' + opts.commentId),
+            method: 'DELETE',
+            json: true,
+            followAllRedirects: true
+        };
 
         return this.jiraClient.makeRequest(options, callback, 'Comment Deleted');
     };
@@ -532,7 +577,7 @@ function IssueClient(jiraClient) {
      * @return {Promise} Resolved when the remote links are retrieved.
      */
     this.getRemoteLinks = function (opts, callback) {
-        var options = this.buildRequestOptions(opts, '/remotelink', 'GET', null, {globalId: opts.globalId});
+        var options = this.buildRequestOptions(opts, '/remotelink', 'GET', null, { globalId: opts.globalId });
 
         return this.jiraClient.makeRequest(options, callback);
     };
@@ -594,7 +639,7 @@ function IssueClient(jiraClient) {
             throw new Error(errorStrings.NO_GLOBAL_ID_ERROR);
         }
 
-        var options = this.buildRequestOptions(opts, '/remotelink', 'DELETE', null, {globalId: opts.globalId});
+        var options = this.buildRequestOptions(opts, '/remotelink', 'DELETE', null, { globalId: opts.globalId });
 
         return this.jiraClient.makeRequest(options, callback, 'RemoteLink Deleted');
     };
@@ -689,7 +734,7 @@ function IssueClient(jiraClient) {
      * @return {Promise} Resolved when the transitions are retrieved.
      */
     this.getTransitions = function (opts, callback) {
-        var options = this.buildRequestOptions(opts, '/transitions', 'GET', null, {transitionId: opts.transitionId});
+        var options = this.buildRequestOptions(opts, '/transitions', 'GET', null, { transitionId: opts.transitionId });
 
         return this.jiraClient.makeRequest(options, callback);
     };
@@ -708,17 +753,14 @@ function IssueClient(jiraClient) {
      *     issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {string} opts.transition See {@link https://docs.atlassian.com/jira/REST/latest/#d2e698}
+     * @param {object} [opts.transition] See {@link https://docs.atlassian.com/jira/REST/latest/#d2e698}
+     * @param {string} [opts.transition.id] The ID of the issue transition. Required when specifying a transition to undertake. 
      * @param [callback] Called when the transitions are retrieved.
      * @return {Promise} Resolved when the transitions are retrieved.
      */
     this.transitionIssue = function (opts, callback) {
-        if (!opts.transition) {
-            throw new Error(errorStrings.NO_TRANSITION_ERROR);
-        }
-
         var options;
-        if(!opts.transition.transition) { // To keep backwards compatibility
+        if (!opts.transition.transition) { // To keep backwards compatibility
             options = this.buildRequestOptions(opts, '/transitions', 'POST', opts);
         } else {
             options = this.buildRequestOptions(opts, '/transitions', 'POST', opts.transition)
@@ -781,6 +823,36 @@ function IssueClient(jiraClient) {
     };
 
     /**
+     * Returns the list of changelogs for the issue with the given key.
+     *
+     * @method getChangelog
+     * @memberOf IssueClient#
+     * @param {Object} opts The options to pass to the API.  Note that this object must contain EITHER an issueId or
+     *     issueKey property; issueId will be used over issueKey if both are present.
+     * @param {string} [opts.issueId] The id of the issue.  EX: 10002
+     * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
+     * @param {string} [opts.startAt] Pagination startAt (default 0)
+     * @param {string} [opts.maxResults] Pagination maxResults (default 100)
+     * @param [callback] Called after the changelog is retrieved.
+     * @return {Promise} Resolved after the changelog is retrieved.
+     */
+    this.getChangelog = function (opts, callback) {
+        var endpoint = '/issue/' + (opts.issueId || opts.issueKey) + '/changelog';
+        var options = {
+            uri: this.jiraClient.buildURL(endpoint),
+            method: 'GET',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                startAt: opts.startAt,
+                maxResults: opts.maxResults
+            }
+        };
+
+        return this.jiraClient.makeRequest(options, callback);
+    };
+
+    /**
      * Returns the list of watchers for the issue with the given key.
      *
      * @method getWatchers
@@ -837,7 +909,7 @@ function IssueClient(jiraClient) {
         if (!opts.watcher) {
             throw new Error(errorStrings.NO_WATCHER_ERROR);
         }
-        var options = this.buildRequestOptions(opts, '/watchers', 'DELETE', null, {username: opts.watcher});
+        var options = this.buildRequestOptions(opts, '/watchers', 'DELETE', null, { username: opts.watcher });
 
         return this.jiraClient.makeRequest(options, callback, 'Watcher Removed');
     };
@@ -880,19 +952,34 @@ function IssueClient(jiraClient) {
      *     remaining estimate field. e.g. "2d"
      * @param {string} [opts.reduceBy] (required when "manual" is selected for adjustEstimate) the amount to reduce the
      *     remaining estimate by e.g. "2d"
-     * @param {Object} opts.worklog See {@link: https://docs.atlassian.com/jira/REST/latest/#d2e1106}
      * @param [callback] Called after the worklog is added.
      * @return {Promise} Resolved after the worklog is added.
      */
     this.addWorkLog = function (opts, callback) {
-        if (!opts.worklog) {
-            throw new Error(errorStrings.NO_WORKLOG_ERROR);
-        }
-        var options = this.buildRequestOptions(opts, '/worklog', 'POST', opts.worklog, {
-            newEstimate: opts.newEstimate,
-            reduceBy: opts.reduceBy,
-            adjustEstimate: opts.adjustEstimate
-        });
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/worklog'),
+            method: 'POST',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                notifyUsers: opts.notifyUsers,
+                adjustEstimate: opts.adjustEstimate,
+                newEstimate: opts.newEstimate,
+                reduceBy: opts.reduceBy,
+                expand: opts.expand,
+                overrideEditableFlag: opts.overrideEditableFlag
+            },
+            body: opts.worklog || Object.assign(opts, {
+                issueId: undefined,
+                issueKey: undefined,
+                notifyUsers: undefined,
+                adjustEstimate: undefined,
+                newEstimate: undefined,
+                reduceBy: undefined,
+                expand: undefined,
+                overrideEditableFlag: undefined
+            })
+        };
 
         return this.jiraClient.makeRequest(options, callback, 'Worklog Added');
     };
@@ -906,15 +993,20 @@ function IssueClient(jiraClient) {
      *     issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {string} opts.worklogId The id of the work log to retrieve.
+     * @param {string} opts.id The id of the work log to retrieve.
      * @param [callback] Called after the worklog is retrieved.
      * @return {Promise} Resolved after the worklog is retrieved.
      */
     this.getWorkLog = function (opts, callback) {
-        if (!opts.worklogId) {
-            throw new Error(errorStrings.NO_WORKLOG_ID_ERROR);
-        }
-        var options = this.buildRequestOptions(opts, '/worklog/' + opts.worklogId, 'GET');
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/worklog/' + (opts.id || opts.worklogId)),
+            method: 'GET',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                expand: opts.expand
+            }
+        };
 
         return this.jiraClient.makeRequest(options, callback);
     };
@@ -928,7 +1020,7 @@ function IssueClient(jiraClient) {
      *     issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {string} opts.worklogId The id of the work log to retrieve.
+     * @param {string} opts.id The id of the work log to retrieve.
      * @param {string} [opts.adjustEstimate] Allows you to provide specific instructions to update the remaining time
      *     estimate of the issue. Valid values are
      *     * "new" - sets the estimate to a specific value
@@ -942,16 +1034,28 @@ function IssueClient(jiraClient) {
      * @return {Promise} Resolved after the worklog is updated.
      */
     this.updateWorkLog = function (opts, callback) {
-        if (!opts.worklogId) {
-            throw new Error(errorStrings.NO_WORKLOG_ID_ERROR);
-        } else if (!opts.worklog) {
-            throw new Error(errorStrings.NO_WORKLOG_ERROR);
-        }
-
-        var options = this.buildRequestOptions(opts, '/worklog/' + opts.worklogId, 'PUT', opts.worklog, {
-            newEstimate: opts.newEstimate,
-            adjustEstimate: opts.adjustEstimate
-        });
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/worklog/' + (opts.id || opts.worklogId)),
+            method: 'PUT',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                notifyUsers: opts.notifyUsers,
+                adjustEstimate: opts.adjustEstimate,
+                newEstimate: opts.newEstimate,
+                expand: opts.expand,
+                overrideEditableFlag: opts.overrideEditableFlag
+            },
+            body: Object.assign(opts, {
+                issueId: undefined,
+                issueKey: undefined,
+                notifyUsers: undefined,
+                adjustEstimate: undefined,
+                newEstimate: undefined,
+                expand: undefined,
+                overrideEditableFlag: undefined
+            })
+        };
 
         return this.jiraClient.makeRequest(options, callback);
     };
@@ -965,7 +1069,7 @@ function IssueClient(jiraClient) {
      *     issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {string} opts.worklogId The id of the work log to delete.
+     * @param {string} opts.id The id of the work log to delete.
      * @param {string} [opts.adjustEstimate] Allows you to provide specific instructions to update the remaining time
      *     estimate of the issue. Valid values are
      *     * "new" - sets the estimate to a specific value
@@ -981,14 +1085,20 @@ function IssueClient(jiraClient) {
      * @return {Promise} Resolved after the work log is deleted.
      */
     this.deleteWorkLog = function (opts, callback) {
-        if (!opts.worklogId) {
-            throw new Error(errorStrings.NO_WORKLOG_ID_ERROR);
-        }
-        var options = this.buildRequestOptions(opts, '/worklog/' + opts.worklogId, 'DELETE', null, {
-            newEstimate: opts.newEstimate,
-            increaseBy: opts.increaseBy,
-            adjustEstimate: opts.adjustEstimate
-        });
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/worklog/' + (opts.id || opts.worklogId)),
+            method: 'DELETE',
+            json: true,
+            followAllRedirects: true,
+            qs: {
+                notifyUsers: opts.notifyUsers,
+                adjustEstimate: opts.adjustEstimate,
+                newEstimate: opts.newEstimate,
+                increaseBy: opts.increaseBy,
+                overrideEditableFlag: opts.overrideEditableFlag
+            }
+        };
+
         return this.jiraClient.makeRequest(options, callback, 'Work Log Deleted');
     };
 
@@ -1001,21 +1111,39 @@ function IssueClient(jiraClient) {
      *     issueKey property; issueId will be used over issueKey if both are present.
      * @param {string} [opts.issueId] The id of the issue.  EX: 10002
      * @param {string} [opts.issueKey] The Key of the issue.  EX: JWR-3
-     * @param {string} opts.filename The file name of attachment. If you pass an array of filenames, multiple attachments will be added.
-     * @param [callback] Called when the attachment has been attached.
+     * @param {string | Array<string>} opts.filename The file name of attachment. If you pass an array of filenames, multiple attachments will be added.
+     * @param {Object} [opts.headers]
+     * @param {Function} [callback] Called when the attachment has been attached.
      * @return {Promise} Resolved when the attachment has been attached.
      */
     this.addAttachment = function (opts, callback) {
-        if (!opts.filename) {
-            throw new Error(errorStrings.NO_FILENAME_ERROR);
+        var filename = Array.isArray(opts.filename) ? opts.filename : [opts.filename];
+        var attachments = filename.map(function (filePath) {
+            var filename = filePath.split('/').reverse()[0];
+            var mimeType = mime.lookup(filename);
+            return {
+                value: fs.createReadStream(filePath),
+                options: {
+                    filename: filename,
+                    contentType: mimeType
+                }
+            }
+        });
+
+        var headers = {
+            charset: 'utf-8',
+            'X-Atlassian-Token': 'nocheck'
         }
-        var options = this.buildRequestOptions(opts, '/attachments', 'POST');
-        delete options.body;
-        if (opts.filename.constructor !== Array) opts.filename = [opts.filename];
-        var attachments = opts.filename.map (function (filename) {return fs.createReadStream(filename)});
-        options.formData = {file: attachments};
-        options.headers = {
-            "X-Atlassian-Token": "nocheck"
+
+        var options = {
+            uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/attachments'),
+            method: 'POST',
+            json: true,
+            followAllRedirects: true,
+            headers: Object.assign(headers, opts.headers || {}),
+            formData: {
+                file: attachments
+            }
         };
 
         return this.jiraClient.makeRequest(options, callback);
@@ -1121,34 +1249,34 @@ function IssueClient(jiraClient) {
         } else if (!opts.propertyValue) {
             throw new Error(errorStrings.NO_PROPERTY_VALUE_ERROR);
         }
-      var options = this.buildRequestOptions(
-        opts,
-        '/worklog/' + opts.worklogId + '/properties/' + opts.propertyKey,
-        'PUT',
-        opts.propertyValue
-      );
-      return this.jiraClient.makeRequest(options, callback, 'Property Set');
+        var options = this.buildRequestOptions(
+            opts,
+            '/worklog/' + opts.worklogId + '/properties/' + opts.propertyKey,
+            'PUT',
+            opts.propertyValue
+        );
+        return this.jiraClient.makeRequest(options, callback, 'Property Set');
     };
 
     this.getWorkLogProperties = function (opts, callback) {
-      var options = this.buildRequestOptions(
-        opts,
-        '/worklog/' + opts.worklogId + '/properties/',
-        'GET'
-      );
-      return this.jiraClient.makeRequest(options, callback);
+        var options = this.buildRequestOptions(
+            opts,
+            '/worklog/' + opts.worklogId + '/properties/',
+            'GET'
+        );
+        return this.jiraClient.makeRequest(options, callback);
     };
 
     this.getWorkLogProperty = function (opts, callback) {
-      if (!opts.propertyKey) {
-          throw new Error(errorStrings.NO_PROPERTY_KEY_ERROR);
-      }
-      var options = this.buildRequestOptions(
-        opts,
-        '/worklog/' + opts.worklogId + '/properties/' + opts.propertyKey,
-        'GET'
-      );
-      return this.jiraClient.makeRequest(options, callback);
+        if (!opts.propertyKey) {
+            throw new Error(errorStrings.NO_PROPERTY_KEY_ERROR);
+        }
+        var options = this.buildRequestOptions(
+            opts,
+            '/worklog/' + opts.worklogId + '/properties/' + opts.propertyKey,
+            'GET'
+        );
+        return this.jiraClient.makeRequest(options, callback);
     };
 
     /**
@@ -1202,7 +1330,7 @@ function IssueClient(jiraClient) {
             json: true
         };
     }
-    
+
     /**
      * Returns suggested issues which match the auto-completion query for the 
      * user which executes this request. This REST method will check the user's 
