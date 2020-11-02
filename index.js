@@ -457,7 +457,8 @@ var JiraClient = module.exports = function (config) {
             if (!options.headers) {
               options.headers = {};
             }
-            options.headers['Authorization'] = `JWT ${jwtToken}`;
+            const realm = this.jwt.realm || 'JWT'
+            options.headers['Authorization'] = `${realm} ${jwtToken}`;
         }
 
         if (this.cookie_jar) {
