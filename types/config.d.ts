@@ -25,6 +25,7 @@ export interface Config {
     iss: string;
     secret: string;
     expiry_time_seconds?: number;
+    realm?: string;
   };
   cookie_jar?: any;
   promise?: PromiseLike<any>;

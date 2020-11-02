@@ -159,6 +159,7 @@ var worklog = require('./api/worklog');
  * @param {string} config.jwt.iss The Jira app key (can be found in the app descriptor). MUST be included
  * @param {string} config.jwt.secret The JWT secret token. MUST be included
  * @param {string} [config.jwt.expiry_time_seconds] The JWT token expiry time in seconds. OPTIONAL (default 180 seconds)
+ * @param {string} [config.jwt.realm] The authorization header realm. OPTIONAL (default JWT)
  * @param {CookieJar} [config.cookie_jar] The CookieJar to use for every requests.
  * @param {Promise} [config.promise] Any function (constructor) compatible with Promise (bluebird, Q,...).
  *      Default - native Promise.
@@ -228,19 +229,19 @@ var JiraClient = module.exports = function (config) {
             };
         }
     } else if (config.jwt) {
-      if (config.jwt.secret && config.jwt.iss) {
-        this.jwt = {
-          iss: config.jwt.iss,
-          secret: config.jwt.secret,
-          expiry_time_seconds: config.jwt.expiry_time_seconds || 3 * 60
-        };
-      } else {
         if (!config.jwt.secret) {
-          throw new Error(errorStrings.NO_JWT_SECRET_KEY_ERROR);
-        } else if (!config.jwt.iss) {
-          throw new Error(errorStrings.NO_JWT_ISS_KEY_ERROR);
+            throw new Error(errorStrings.NO_JWT_SECRET_KEY_ERROR);
         }
-      }
+        if (!config.jwt.iss) {
+            throw new Error(errorStrings.NO_JWT_ISS_KEY_ERROR);
+        }
+
+        this.jwt = {
+            iss: config.jwt.iss,
+            secret: config.jwt.secret,
+            expiry_time_seconds: config.jwt.expiry_time_seconds || 3 * 60,
+            realm: config.jwt.realm || 'JWT'
+        };
     }
 
     if (config.cookie_jar) {
@@ -457,8 +458,7 @@ var JiraClient = module.exports = function (config) {
             if (!options.headers) {
               options.headers = {};
             }
-            const realm = this.jwt.realm || 'JWT'
-            options.headers['Authorization'] = `${realm} ${jwtToken}`;
+            options.headers['Authorization'] = `${this.jwt.realm} ${jwtToken}`;
         }
 
         if (this.cookie_jar) {
