@@ -1,19 +1,8 @@
-# Thanks All!
-
-I no longer have the time, energy or interest to maintain this project, so I'm going to be archiving it.
-
-As an alternative to jira-connector, try: https://github.com/MrRefactoring/jira.js
+Fork of archived https://github.com/floralvikings/jira-connector
 
 # JavaScript Jira API Wrapper for NodeJS
 
 Node.JS module which provides easy-to-use access to the Jira REST API.
-
-## Important Change in Version 1.0.0
-
-Starting with version 1.0.0, all functions and parameters utilize `xxxId` instead of `xxxID`.
-Prior to this update, this naming convention was inconsistent and easily confused.
-
-Please update your code accordingly.
 
 ## Installation
 
