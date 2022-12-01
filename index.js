@@ -7,6 +7,7 @@ const url = require('url');
 const request = require('request');
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
+const zlib = require('zlib');
 
 // Custom packages
 var applicationProperties = require('./api/application-properties');
@@ -505,7 +506,14 @@ var JiraClient = module.exports = function (config) {
 
                     // Data collected
                     response.on('end', function () {
-                        var result = body.join('');
+                        // Handle compression, request must have "Accept-Encoding: gzip" header
+                        let result = ''
+                        if (response.headers['content-encoding'] === 'gzip') {
+                            const buffer = Buffer.concat(body)
+                            result = zlib.gunzipSync(buffer).toString()
+                        } else {
+                            result = body.join('');
+                        }
 
                         // Parsing JSON
                         if (result[0] === '[' || result[0] === '{') {
