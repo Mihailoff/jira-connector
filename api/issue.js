@@ -2,6 +2,7 @@
 
 var fs = require('fs');
 var mime = require('mime-types');
+var FormData = require('form-data')
 var errorStrings = require('./../lib/error');
 
 module.exports = IssueClient;
@@ -1130,20 +1131,24 @@ function IssueClient(jiraClient) {
             }
         });
 
-        var headers = {
-            charset: 'utf-8',
-            'X-Atlassian-Token': 'nocheck'
-        }
 
+        const formData = new FormData()
+        attachments.forEach(att => {
+            formData.append('file', att.value)
+        })
+        var headers = {
+            'Content-Type': 'multipart/form-data',
+            charset: 'utf-8',
+            'X-Atlassian-Token': 'nocheck',
+            ...formData.getHeaders(),
+        }
         var options = {
             uri: this.jiraClient.buildURL('/issue/' + (opts.issueId || opts.issueKey) + '/attachments'),
             method: 'POST',
             json: true,
             followAllRedirects: true,
             headers: Object.assign(headers, opts.headers || {}),
-            formData: {
-                file: attachments
-            }
+            formData
         };
 
         return this.jiraClient.makeRequest(options, callback);

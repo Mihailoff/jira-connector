@@ -65,13 +65,16 @@ var workflow = require('./api/workflow');
 var workflowScheme = require('./api/workflowScheme');
 var worklog = require('./api/worklog');
 
-const translateOptions = ({ qs, body, uri, ...opts }) => {
+const translateOptions = ({ qs, body, uri, formData, ...opts }) => {
     const _opts = { ...opts }
     if (qs) {
       _opts.params = qs
     }
     if (body) {
       _opts.data = body
+    }
+    if (formData) {
+        _opts.data = formData
     }
     if (uri) {
       _opts.url = uri
