@@ -272,7 +272,7 @@ function VersionClient(jiraClient) {
     this.buildRequestOptions = function (opts, path, method, body, qs) {
         var basePath = '/version/' + opts.versionId;
         if (!qs) qs = {};
-        if (!body) body = {};
+        if (!body && method !== "GET") body = {};
 
         if (opts.fields) {
             qs.fields = '';

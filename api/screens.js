@@ -220,7 +220,7 @@ function ScreensClient(jiraClient) {
     this.buildRequestOptions = function (opts, path, method, body, qs) {
         var basePath = '/screens/' + opts.screenId;
         if (!qs) qs = {};
-        if (!body) body = {};
+        if (!body && method !== "GET") body = {};
 
         if (opts.fields) {
             qs.fields = '';

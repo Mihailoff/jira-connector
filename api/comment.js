@@ -111,7 +111,7 @@ function CommentClient(jiraClient) {
         }
         var basePath = '/comment/' + opts.commentId + "/properties";
         if (!qs) qs = {};
-        if (!body) body = {};
+        if (!body && method !== "GET") body = {};
 
         if (opts.fields) {
             qs.fields = '';

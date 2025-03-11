@@ -271,7 +271,7 @@ function ProjectClient(jiraClient) {
         var basePath = opts.projectIdOrKey ? '/project/' + opts.projectIdOrKey : '/project';
 
         if (!qs) qs = {};
-        if (!body) body = {};
+        if (!body && method !== "GET") body = {};
 
         if (opts.fields) {
             qs.fields = '';

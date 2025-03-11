@@ -1298,7 +1298,7 @@ function IssueClient(jiraClient) {
         var idOrKey = opts.issueId || opts.issueKey;
         var basePath = '/issue/' + idOrKey;
         if (!qs) qs = {};
-        if (!body) body = {};
+        if (!body && method !== "GET") body = {};
 
         if (opts.fields) {
             qs.fields = '';
