@@ -4,7 +4,7 @@
 const url = require('url');
 
 // Npm packages
-const request = require('request');
+const axios = require('axios');
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
 const zlib = require('zlib');
@@ -65,6 +65,31 @@ var webhook = require('./api/webhook');
 var workflow = require('./api/workflow');
 var workflowScheme = require('./api/workflowScheme');
 var worklog = require('./api/worklog');
+
+const translateOptions = ({ qs, body, uri, formData, ...opts }) => {
+    const _opts = { ...opts }
+    if (qs) {
+      _opts.params = qs
+    }
+    if (body) {
+      _opts.data = body
+    }
+    if (formData) {
+        _opts.data = formData
+    }
+    if (uri) {
+      _opts.url = uri
+    }
+    if (!opts?.headers?.['Content-Type']) {
+      if (!opts?.headers) _opts.headers = {}
+      _opts.headers['Content-Type'] = 'application/json'
+    }
+    if (opts.auth) {
+      _opts.auth = { username: opts.auth.user, password: opts.auth.pass }
+    }
+    console.log(JSON.stringify(_opts, null, 2))
+    return _opts
+}
 
 /**
  * @callback callback
@@ -164,8 +189,8 @@ var worklog = require('./api/worklog');
  * @param {CookieJar} [config.cookie_jar] The CookieJar to use for every requests.
  * @param {Promise} [config.promise] Any function (constructor) compatible with Promise (bluebird, Q,...).
  *      Default - native Promise.
- * @param {Request} [config.request] Any function (constructor) compatible with Request (request, supertest,...).
- *      Default - require('request').
+ * @param {Request} [config.request] Any function (constructor) compatible with Axios
+ *      Default - require('axios').
  */
 
 var JiraClient = module.exports = function (config) {
@@ -184,7 +209,7 @@ var JiraClient = module.exports = function (config) {
     this.authApiVersion = '1';
     this.webhookApiVersion = '1.0';
     this.promise = config.promise || Promise;
-    this.requestLib = config.request || request;
+    this.requestLib = config.request || axios;
     this.rejectUnauthorized = config.rejectUnauthorized;
 
     if (config.oauth) {
@@ -424,7 +449,7 @@ var JiraClient = module.exports = function (config) {
      * @param {string} [successString] If supplied, this is reported instead of the response body.
      * @return {Promise} Resolved with APIs response or rejected with error
      */
-    this.makeRequest = function (options, callback, successString) {
+    this.makeRequest = async function (options, callback, successString) {
         let requestLib = this.requestLib;
         options.rejectUnauthorized = this.rejectUnauthorized;
         options.strictSSL = this.strictSSL;
@@ -466,16 +491,11 @@ var JiraClient = module.exports = function (config) {
             options.jar = this.cookie_jar;
         }
 
+        const opts = translateOptions(options)
         if (callback) {
-            requestLib(options, function (err, response, body) {
-                if (
-                    err ||
-                    response.statusCode < 200 ||
-                    response.statusCode > 399
-                ) {
-                    return callback(err ? err : body, null, response);
-                }
-
+            try {
+                const response = await requestLib(opts)
+                const body = response.data
                 if (typeof body === 'string') {
                     try {
                         body = JSON.parse(body);
@@ -485,10 +505,12 @@ var JiraClient = module.exports = function (config) {
                 }
 
                 return callback(null, successString ? successString : body, response);
-            });
+            } catch (err) {
+                return callback(err, null)
+            }
         } else if (this.promise) {
             return new this.promise(function (resolve, reject) {
-                var req = requestLib(options);
+                var req = requestLib(opts);
                 var requestObj = null;
 
                 req.on('request', function (request) {
@@ -526,11 +548,11 @@ var JiraClient = module.exports = function (config) {
 
                         if (error) {
                             response.body = result;
-                            if (options.debug) {
+                            if (opts.debug) {
                                 reject({
                                     result: JSON.stringify(response),
                                     debug: {
-                                        options: options,
+                                        options: opts,
                                         request: {
                                             headers: requestObj._headers,
                                         },
@@ -545,11 +567,11 @@ var JiraClient = module.exports = function (config) {
                             return;
                         }
 
-                        if (options.debug) {
+                        if (opts.debug) {
                             resolve({
                                 result,
                                 debug: {
-                                    options: options,
+                                    options: opts,
                                     request: {
                                         headers: requestObj._headers,
                                     },
