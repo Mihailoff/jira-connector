@@ -127,7 +127,7 @@ function CommentClient(jiraClient) {
             });
         }
 
-        return {
+        var options = {
             uri: this.jiraClient.buildURL(basePath + path),
             method: method,
             body: body,
@@ -135,5 +135,9 @@ function CommentClient(jiraClient) {
             followAllRedirects: true,
             json: true
         };
+        if (method === 'GET') {
+            delete options.body;
+        }
+        return options;
     }
 }

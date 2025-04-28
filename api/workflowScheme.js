@@ -508,7 +508,7 @@ function WorkflowSchemeClient(jiraClient) {
             qs.expand = qs.expand.slice(0, -1);
         }
 
-        return {
+        var options = {
             uri: this.jiraClient.buildURL(basePath + path),
             method: method,
             body: body,
@@ -516,5 +516,9 @@ function WorkflowSchemeClient(jiraClient) {
             followAllRedirects: true,
             json: true
         };
+        if (method === 'GET') {
+            delete options.body;
+        }
+        return options;
     };
 }

@@ -1321,7 +1321,7 @@ function IssueClient(jiraClient) {
             });
         }
 
-        return {
+        var options = {
             uri: this.jiraClient.buildURL(basePath + path),
             method: method,
             body: body,
@@ -1329,6 +1329,10 @@ function IssueClient(jiraClient) {
             followAllRedirects: true,
             json: true
         };
+        if (method === 'GET') {
+            delete options.body;
+        }
+        return options;
     }
 
     /**
