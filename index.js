@@ -87,7 +87,7 @@ const translateOptions = ({ qs, body, uri, formData, ...opts }) => {
     if (opts.auth) {
       _opts.auth = { username: opts.auth.user, password: opts.auth.pass }
     }
-    console.log(JSON.stringify(_opts, null, 2))
+
     return _opts
 }
 
