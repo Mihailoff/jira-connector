@@ -1,5 +1,10 @@
 Fork of archived https://github.com/floralvikings/jira-connector
 
+# Changelog
+
+* v3.2+ replaced deprecated _request_ library with _axios_
+* v3.1+ merged a number of community fixes and improvements
+
 # JavaScript Jira API Wrapper for NodeJS
 
 Node.JS module which provides easy-to-use access to the Jira REST API.
@@ -9,13 +14,13 @@ Node.JS module which provides easy-to-use access to the Jira REST API.
 Install with [npm](http://npmjs.org/):
 
 ```bash
-    $ npm install jira-connector
+    $ npm install github:Mihailoff/jira-connector
 ```
 
 Install via Git clone:
 
 ```bash
-    $ git clone https://github.com/floralvikings/jira-connector.git
+    $ git clone https://github.com/Mihailoff/jira-connector.git
     $ cd jira-connector
     $ npm install
 ```
@@ -33,7 +38,7 @@ pages. Simply run:
 In the jira-connector source directory. This will create a `docs` directory, containing the HTML
 markup for the docs.
 
-Also, the [official Jira API docs](https://docs.atlassian.com/jira/REST/latest/) are very useful; many of
+Also, the [official Jira API docs](https://developer.atlassian.com/cloud/jira/platform/rest/) are very useful; many of
 the functions in jira-connector use the exact same format as the request bodies of these endpoints.
 
 ## Example
