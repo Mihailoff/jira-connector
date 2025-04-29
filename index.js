@@ -491,7 +491,29 @@ var JiraClient = module.exports = function (config) {
             options.jar = this.cookie_jar;
         }
 
+        if (requestLib !== axios) {
+            console.warn('Warning: The request library is not axios. This may cause unexpected/broken behavior.');
+        }
+
+        // Enable debug logging for axios
+        if (options.debug) {
+            if (requestLib === axios) {
+                requestLib.interceptors.request.use(request => {
+                    console.log('Axios Request:', JSON.stringify(request, null, 2))
+                    return request
+                })
+
+                requestLib.interceptors.response.use(response => {
+                    console.log('Axios Response:', JSON.stringify(response, null, 2))
+                    return response
+                })
+            } else {
+                console.warn('Debugging is only supported with axios')
+            }
+        }
+
         const opts = translateOptions(options)
+
         if (callback) {
             try {
                 const response = await requestLib(opts)
@@ -508,86 +530,32 @@ var JiraClient = module.exports = function (config) {
             } catch (err) {
                 return callback(err, null)
             }
-        } else if (this.promise) {
-            return new this.promise(function (resolve, reject) {
-                var req = requestLib(opts);
-                var requestObj = null;
+        } else {
+            try {
+                const {
+                    data: result,
+                    status: statusCode
+                } = await requestLib(opts)
 
-                req.on('request', function (request) {
-                    requestObj = request;
-                });
+                const error = statusCode < 200 || statusCode > 399;
 
-                req.on('response', function (response) {
-                    // Saving error
-                    var error = response.statusCode < 200 || response.statusCode > 399;
+                if (error) {
+                    return Promise.reject(JSON.stringify({
+                        statusCode,
+                        result,
+                    }));
+                }
 
-                    // Collecting data
-                    var body = [];
-                    var push = body.push.bind(body);
-                    response.on('data', push);
+                return result
+            } catch (error) {
+                const errorObj = error.toJSON();
 
-                    // Data collected
-                    response.on('end', function () {
-                        // Handle compression, request must have "Accept-Encoding: gzip" header
-                        let result = ''
-                        if (response.headers['content-encoding'] === 'gzip') {
-                            const buffer = Buffer.concat(body)
-                            result = zlib.gunzipSync(buffer).toString()
-                        } else {
-                            result = body.join('');
-                        }
-
-                        // Parsing JSON
-                        if (result[0] === '[' || result[0] === '{') {
-                            try {
-                                result = JSON.parse(result);
-                            } catch (e) {
-                                // nothing to do
-                            }
-                        }
-
-                        if (error) {
-                            response.body = result;
-                            if (opts.debug) {
-                                reject({
-                                    result: JSON.stringify(response),
-                                    debug: {
-                                        options: opts,
-                                        request: {
-                                            headers: requestObj._headers,
-                                        },
-                                        response: {
-                                            headers: response.headers,
-                                        },
-                                    }
-                                });
-                            } else {
-                                reject(JSON.stringify(response));
-                            }
-                            return;
-                        }
-
-                        if (opts.debug) {
-                            resolve({
-                                result,
-                                debug: {
-                                    options: opts,
-                                    request: {
-                                        headers: requestObj._headers,
-                                    },
-                                    response: {
-                                        headers: response.headers,
-                                    },
-                                }
-                            });
-                        } else {
-                            resolve(result);
-                        }
-                    });
-                });
-
-                req.on('error', reject);
-            });
+                return Promise.reject(JSON.stringify({
+                    statusCode: errorObj.status,
+                    result: error.response ? error.response.data : undefined,
+                    ...errorObj
+                }));
+            }
         }
     };
 }).call(JiraClient.prototype);
