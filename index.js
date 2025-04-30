@@ -7,7 +7,6 @@ const url = require('url');
 const axios = require('axios');
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
-const zlib = require('zlib');
 
 // Custom packages
 var applicationProperties = require('./api/application-properties');
@@ -491,13 +490,13 @@ var JiraClient = module.exports = function (config) {
             options.jar = this.cookie_jar;
         }
 
-        if (requestLib !== axios) {
+        if (!(requestLib instanceof axios.constructor)) {
             console.warn('Warning: The request library is not axios. This may cause unexpected/broken behavior.');
         }
 
         // Enable debug logging for axios
         if (options.debug) {
-            if (requestLib === axios) {
+            if (requestLib instanceof axios.constructor) {
                 requestLib.interceptors.request.use(request => {
                     console.log('Axios Request:', JSON.stringify(request, null, 2))
                     return request
