@@ -4,10 +4,9 @@
 const url = require('url');
 
 // Npm packages
-const request = require('request');
+const axios = require('axios');
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
-const zlib = require('zlib');
 
 // Custom packages
 var applicationProperties = require('./api/application-properties');
@@ -65,6 +64,31 @@ var webhook = require('./api/webhook');
 var workflow = require('./api/workflow');
 var workflowScheme = require('./api/workflowScheme');
 var worklog = require('./api/worklog');
+
+const translateOptions = ({ qs, body, uri, formData, ...opts }) => {
+    const _opts = { ...opts }
+    if (qs) {
+      _opts.params = qs
+    }
+    if (body) {
+      _opts.data = body
+    }
+    if (formData) {
+        _opts.data = formData
+    }
+    if (uri) {
+      _opts.url = uri
+    }
+    if (!opts?.headers?.['Content-Type']) {
+      if (!opts?.headers) _opts.headers = {}
+      _opts.headers['Content-Type'] = 'application/json'
+    }
+    if (opts.auth) {
+      _opts.auth = { username: opts.auth.user, password: opts.auth.pass }
+    }
+
+    return _opts
+}
 
 /**
  * @callback callback
@@ -164,8 +188,8 @@ var worklog = require('./api/worklog');
  * @param {CookieJar} [config.cookie_jar] The CookieJar to use for every requests.
  * @param {Promise} [config.promise] Any function (constructor) compatible with Promise (bluebird, Q,...).
  *      Default - native Promise.
- * @param {Request} [config.request] Any function (constructor) compatible with Request (request, supertest,...).
- *      Default - require('request').
+ * @param {Request} [config.request] Any function (constructor) compatible with Axios
+ *      Default - require('axios').
  */
 
 var JiraClient = module.exports = function (config) {
@@ -184,7 +208,7 @@ var JiraClient = module.exports = function (config) {
     this.authApiVersion = '1';
     this.webhookApiVersion = '1.0';
     this.promise = config.promise || Promise;
-    this.requestLib = config.request || request;
+    this.requestLib = config.request || axios;
     this.rejectUnauthorized = config.rejectUnauthorized;
 
     if (config.oauth) {
@@ -424,7 +448,7 @@ var JiraClient = module.exports = function (config) {
      * @param {string} [successString] If supplied, this is reported instead of the response body.
      * @return {Promise} Resolved with APIs response or rejected with error
      */
-    this.makeRequest = function (options, callback, successString) {
+    this.makeRequest = async function (options, callback, successString) {
         let requestLib = this.requestLib;
         options.rejectUnauthorized = this.rejectUnauthorized;
         options.strictSSL = this.strictSSL;
@@ -466,16 +490,33 @@ var JiraClient = module.exports = function (config) {
             options.jar = this.cookie_jar;
         }
 
-        if (callback) {
-            requestLib(options, function (err, response, body) {
-                if (
-                    err ||
-                    response.statusCode < 200 ||
-                    response.statusCode > 399
-                ) {
-                    return callback(err ? err : body, null, response);
-                }
+        if (!(requestLib instanceof axios.constructor)) {
+            console.warn('Warning: The request library is not axios. This may cause unexpected/broken behavior.');
+        }
 
+        // Enable debug logging for axios
+        if (options.debug) {
+            if (requestLib instanceof axios.constructor) {
+                requestLib.interceptors.request.use(request => {
+                    console.log('Axios Request:', JSON.stringify(request, null, 2))
+                    return request
+                })
+
+                requestLib.interceptors.response.use(response => {
+                    console.log('Axios Response:', JSON.stringify(response, null, 2))
+                    return response
+                })
+            } else {
+                console.warn('Debugging is only supported with axios')
+            }
+        }
+
+        const opts = translateOptions(options)
+
+        if (callback) {
+            try {
+                const response = await requestLib(opts)
+                const body = response.data
                 if (typeof body === 'string') {
                     try {
                         body = JSON.parse(body);
@@ -485,87 +526,35 @@ var JiraClient = module.exports = function (config) {
                 }
 
                 return callback(null, successString ? successString : body, response);
-            });
-        } else if (this.promise) {
-            return new this.promise(function (resolve, reject) {
-                var req = requestLib(options);
-                var requestObj = null;
+            } catch (err) {
+                return callback(err, null)
+            }
+        } else {
+            try {
+                const {
+                    data: result,
+                    status: statusCode
+                } = await requestLib(opts)
 
-                req.on('request', function (request) {
-                    requestObj = request;
-                });
+                const error = statusCode < 200 || statusCode > 399;
 
-                req.on('response', function (response) {
-                    // Saving error
-                    var error = response.statusCode < 200 || response.statusCode > 399;
+                if (error) {
+                    return Promise.reject(JSON.stringify({
+                        statusCode,
+                        result,
+                    }));
+                }
 
-                    // Collecting data
-                    var body = [];
-                    var push = body.push.bind(body);
-                    response.on('data', push);
+                return result
+            } catch (error) {
+                const errorObj = error.toJSON();
 
-                    // Data collected
-                    response.on('end', function () {
-                        // Handle compression, request must have "Accept-Encoding: gzip" header
-                        let result = ''
-                        if (response.headers['content-encoding'] === 'gzip') {
-                            const buffer = Buffer.concat(body)
-                            result = zlib.gunzipSync(buffer).toString()
-                        } else {
-                            result = body.join('');
-                        }
-
-                        // Parsing JSON
-                        if (result[0] === '[' || result[0] === '{') {
-                            try {
-                                result = JSON.parse(result);
-                            } catch (e) {
-                                // nothing to do
-                            }
-                        }
-
-                        if (error) {
-                            response.body = result;
-                            if (options.debug) {
-                                reject({
-                                    result: JSON.stringify(response),
-                                    debug: {
-                                        options: options,
-                                        request: {
-                                            headers: requestObj._headers,
-                                        },
-                                        response: {
-                                            headers: response.headers,
-                                        },
-                                    }
-                                });
-                            } else {
-                                reject(JSON.stringify(response));
-                            }
-                            return;
-                        }
-
-                        if (options.debug) {
-                            resolve({
-                                result,
-                                debug: {
-                                    options: options,
-                                    request: {
-                                        headers: requestObj._headers,
-                                    },
-                                    response: {
-                                        headers: response.headers,
-                                    },
-                                }
-                            });
-                        } else {
-                            resolve(result);
-                        }
-                    });
-                });
-
-                req.on('error', reject);
-            });
+                return Promise.reject(JSON.stringify({
+                    statusCode: errorObj.status,
+                    result: error.response ? error.response.data : undefined,
+                    ...errorObj
+                }));
+            }
         }
     };
 }).call(JiraClient.prototype);
