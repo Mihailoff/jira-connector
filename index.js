@@ -490,13 +490,17 @@ var JiraClient = module.exports = function (config) {
             options.jar = this.cookie_jar;
         }
 
-        if (!(requestLib instanceof axios.constructor)) {
+        // Checking for axios instance is not trivial
+        // "instanceof" won't work because axios is a function
+        const isAxios = (instance) => 'interceptors' in instance;
+
+        if (!(isAxios(requestLib))) {
             console.warn('Warning: The request library is not axios. This may cause unexpected/broken behavior.');
         }
 
         // Enable debug logging for axios
         if (options.debug) {
-            if (requestLib instanceof axios.constructor) {
+            if (isAxios(requestLib)) {
                 requestLib.interceptors.request.use(request => {
                     console.log('Axios Request:', JSON.stringify(request, null, 2))
                     return request
