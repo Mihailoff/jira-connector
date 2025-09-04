@@ -20,7 +20,8 @@ export interface IssueResponse {
 
 export interface SearchResult {
   expand: string;
-  startAt: number;
+  startAt?: number; // Deprecated, kept for backward compatibility
+  nextPageToken?: string;
   maxResults: number;
   total: number;
   issues: IssueResponse[];
@@ -34,7 +35,8 @@ export class Search {
     opts: {
       method?: 'GET' | 'POST' | 'get' | 'post'
       jql?: string;
-      startAt?: number;
+      startAt?: number; // Deprecated, kept for backward compatibility
+      nextPageToken?: string;
       maxResults?: number;
       validateQuery?: string | boolean | 'strict' | 'warn' | 'none' | 'true' | 'false';
       expand?: string[];

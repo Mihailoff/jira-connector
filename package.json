@@ -1,6 +1,6 @@
 {
   "name": "jira-connector",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Easy to use NodeJS wrapper for the Jira REST API.",
   "keywords": [
     "JIRA",
@@ -27,8 +27,8 @@
   },
   "dependencies": {
     "atlassian-jwt": "^1.0.2",
-    "axios": "^1.7.9",
-    "form-data": "^4.0.1",
+    "axios": "^1.11.0",
+    "form-data": "^4.0.4",
     "mime-types": "^2.1.35",
     "oauth": "^0.9.15",
     "query-string": "^6.9.0"

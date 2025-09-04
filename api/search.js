@@ -40,7 +40,7 @@ function SearchClient(jiraClient) {
      * @param opts The options for the search.
      * @param {GET | POST} [opts.method=POST] search request method
      * @param {string} [opts.jql] The JQL query string
-     * @param {number} [opts.startAt=0] The index of the first issue to return (0-based)
+     * @param {string} [opts.nextPageToken] The token to start the next page of results
      * @param {number} [opts.maxResults=50] The maximum number of issues to return (defaults to 50). The maximum allowable
      *     value is dictated by the JIRA property 'jira.search.views.default.max'. If you specify a value that is
      *     higher than this number, your search results will be truncated.
@@ -49,7 +49,7 @@ function SearchClient(jiraClient) {
      *     returned.
      * @param {Array<string>} [opts.expand] A list of the parameters to expand.
      * @param {Array<string>} [opts.properties] A list of the properties to include (5 max).
-     * @param {boolean} [opts.fieldsByKeys=false] Reference fields by their key (rather than ID). 
+     * @param {boolean} [opts.fieldsByKeys=false] Reference fields by their key (rather than ID).
      * @param {callback} [callback] Called with the search results.
      * @return {Promise} Resolved with the search results.
      */
@@ -58,7 +58,7 @@ function SearchClient(jiraClient) {
         opts.method = (opts.method || 'POST').toUpperCase();
 
         var options = {
-            uri: this.jiraClient.buildURL('/search'),
+            uri: this.jiraClient.buildURL('/search/jql'),
             method: opts.method,
             json: true,
             headers: {
@@ -69,12 +69,12 @@ function SearchClient(jiraClient) {
         };
 
         var fields = opts.method === 'POST' ? opts.fields : opts.fields && opts.fields.join(',');
-        var expand = opts.method === 'POST' ? opts.expand : opts.expand && opts.expand.join(',');
+        var expand = opts.method === 'POST' ? opts.expand && opts.expand.join(',') : opts.expand;
         var properties = opts.method === 'POST' ? opts.properties : opts.properties && options.properties.join(',');
 
         var search_options = {
             jql: opts.jql,
-            startAt: opts.startAt || 0,
+            nextPageToken: opts.nextPageToken || null,
             maxResults: opts.maxResults || 50,
             validateQuery: opts.validateQuery,
             fields,
