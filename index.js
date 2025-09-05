@@ -5,7 +5,7 @@ const url = require('url');
 
 // Npm packages
 const axios = require('axios');
-const axiosRetry = require('axios-retry');
+const axiosRetry = require('axios-retry').default;
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
 
