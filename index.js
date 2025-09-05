@@ -5,6 +5,7 @@ const url = require('url');
 
 // Npm packages
 const axios = require('axios');
+const axiosRetry = require('axios-retry');
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
 
@@ -271,6 +272,99 @@ var JiraClient = module.exports = function (config) {
 
     if (config.cookie_jar) {
         this.cookie_jar = config.cookie_jar;
+    }
+
+    // Configure retry strategy for robust API calls
+    const isAxios = (instance) => instance && typeof instance === 'function' && 'interceptors' in instance;
+
+    if (isAxios(this.requestLib)) {
+        // Configuration for retry behavior
+        const maxRetries = config.maxRetries || (process.env.NODE_ENV === 'production' ? 15 : 10);
+
+        axiosRetry(this.requestLib, {
+            retries: maxRetries,
+            retryDelay: (retryCount, error) => {
+                // Check for rate limit headers
+                if (error.response) {
+                    const retryAfter = error.response.headers['retry-after'];
+                    const rateLimitReset = error.response.headers['x-ratelimit-reset'];
+
+                    if (retryAfter) {
+                        // Atlassian provides seconds to wait
+                        const waitTime = parseInt(retryAfter) * 1000;
+                        console.log(`[Retry ${retryCount}/${maxRetries}] Rate limited. Waiting ${retryAfter} seconds before retry...`);
+                        return waitTime;
+                    }
+
+                    if (rateLimitReset) {
+                        // Calculate wait time from reset timestamp
+                        const resetTime = new Date(rateLimitReset * 1000);
+                        const now = new Date();
+                        const waitTime = Math.max(0, resetTime - now);
+                        console.log(`[Retry ${retryCount}/${maxRetries}] Rate limit resets at ${resetTime.toISOString()}. Waiting ${Math.ceil(waitTime/1000)} seconds...`);
+                        return waitTime;
+                    }
+                }
+
+                // Exponential backoff with jitter, capped at 5 minutes
+                const exponentialDelay = Math.min(300000, Math.pow(2, retryCount) * 1000);
+                const jitter = Math.random() * 1000;
+                const finalDelay = exponentialDelay + jitter;
+
+                console.log(`[Retry ${retryCount}/${maxRetries}] Waiting ${Math.ceil(finalDelay/1000)} seconds before retry...`);
+                return finalDelay;
+            },
+            retryCondition: (error) => {
+                // Always retry on network errors
+                if (axiosRetry.isNetworkOrIdempotentRequestError(error)) {
+                    console.log('Network error detected, will retry...');
+                    return true;
+                }
+
+                // Always retry on rate limiting (429)
+                if (error.response && error.response.status === 429) {
+                    console.log('Rate limit (429) hit, will retry after delay...');
+                    return true;
+                }
+
+                // Retry on server errors (5xx)
+                if (error.response && error.response.status >= 500) {
+                    console.log(`Server error (${error.response.status}) detected, will retry...`);
+                    return true;
+                }
+
+                // Retry on timeout
+                if (error.code === 'ECONNABORTED') {
+                    console.log('Request timeout, will retry...');
+                    return true;
+                }
+
+                // Retry on specific network errors
+                if (['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ENETUNREACH', 'EAI_AGAIN'].includes(error.code)) {
+                    console.log(`Network error (${error.code}), will retry...`);
+                    return true;
+                }
+
+                // Don't retry client errors (4xx) except 429
+                if (error.response && error.response.status >= 400 && error.response.status < 500 && error.response.status !== 429) {
+                    console.log(`Client error (${error.response.status}), not retrying.`);
+                    return false;
+                }
+
+                return false;
+            },
+            shouldResetTimeout: true, // Reset timeout between retries
+            onRetry: (retryCount, error, requestConfig) => {
+                console.log(`[Retry ${retryCount}/${maxRetries}] Retrying ${requestConfig.method} ${requestConfig.url}`);
+                if (error.response?.headers) {
+                    const remaining = error.response.headers['x-ratelimit-remaining'];
+                    const limit = error.response.headers['x-ratelimit-limit'];
+                    if (remaining !== undefined && limit !== undefined) {
+                        console.log(`Rate limit: ${remaining}/${limit} remaining`);
+                    }
+                }
+            }
+        });
     }
 
     this.applicationProperties = new applicationProperties(this);
