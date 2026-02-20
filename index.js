@@ -6,6 +6,7 @@ const url = require('url');
 // Npm packages
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
+const Bottleneck = require('bottleneck');
 const jwt = require('atlassian-jwt');
 const queryString = require('query-string');
 
@@ -274,95 +275,77 @@ var JiraClient = module.exports = function (config) {
         this.cookie_jar = config.cookie_jar;
     }
 
-    // Configure retry strategy for robust API calls
+    // Centralized rate limiter + retry strategy
+    // Policy: https://developer.atlassian.com/cloud/jira/platform/rate-limiting/
     const isAxios = (instance) => instance && typeof instance === 'function' && 'interceptors' in instance;
 
     if (isAxios(this.requestLib)) {
-        // Configuration for retry behavior
-        const maxRetries = config.maxRetries || (process.env.NODE_ENV === 'production' ? 15 : 10);
+        this.limiter = new Bottleneck({
+            maxConcurrent: config.maxConcurrent || 10,
+            minTime: config.minTime || 50,          // 20 req/sec baseline
+            reservoir: 400,                          // Jira's typical bucket size
+            reservoirRefreshAmount: 400,
+            reservoirRefreshInterval: 60 * 1000,     // refill every 60s
+        });
 
+        const limiter = this.limiter;
+        const maxRetries = config.maxRetries || 4;   // Atlassian recommends max 4
+
+        // Diagnostics: reservoir depleted — all requests now queuing
+        limiter.on('depleted', () => {
+            const queued = limiter.queued();
+            console.log(`[RateLimit] Reservoir depleted — ${queued} request(s) queued`);
+        });
+
+        // Track rate limit headers from successful responses
+        this.requestLib.interceptors.response.use(
+            (response) => {
+                const remaining = response.headers['x-ratelimit-remaining'];
+                if (remaining !== undefined) {
+                    const val = parseInt(remaining);
+                    if (val < 50) {
+                        console.log(`[RateLimit] Reservoir low: ${val} remaining`);
+                    }
+                    limiter.updateSettings({ reservoir: val });
+                }
+                return response;
+            }
+        );
+
+        // axios-retry: transient errors only (network, 5xx, 429)
         axiosRetry(this.requestLib, {
             retries: maxRetries,
             retryDelay: (retryCount, error) => {
-                // Check for rate limit headers
-                if (error.response) {
+                if (error.response?.status === 429) {
                     const retryAfter = error.response.headers['retry-after'];
-                    const rateLimitReset = error.response.headers['x-ratelimit-reset'];
+                    const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : 5000;
 
-                    if (retryAfter) {
-                        // Atlassian provides seconds to wait
-                        const waitTime = parseInt(retryAfter) * 1000;
-                        console.log(`[Retry ${retryCount}/${maxRetries}] Rate limited. Waiting ${retryAfter} seconds before retry...`);
-                        return waitTime;
-                    }
+                    // Drain reservoir — blocks all queued requests in bottleneck
+                    limiter.updateSettings({ reservoir: 0 });
+                    setTimeout(() => {
+                        limiter.updateSettings({ reservoir: 100 });
+                        console.log('[RateLimit] Reservoir refilled after 429 pause');
+                    }, waitMs);
 
-                    if (rateLimitReset) {
-                        // Calculate wait time from reset timestamp
-                        const resetTime = new Date(rateLimitReset * 1000);
-                        const now = new Date();
-                        const waitTime = Math.max(0, resetTime - now);
-                        console.log(`[Retry ${retryCount}/${maxRetries}] Rate limit resets at ${resetTime.toISOString()}. Waiting ${Math.ceil(waitTime/1000)} seconds...`);
-                        return waitTime;
-                    }
+                    // This request's own wait + jitter
+                    return waitMs + Math.random() * 2000;
                 }
 
-                // Exponential backoff with jitter, capped at 5 minutes
-                const exponentialDelay = Math.min(300000, Math.pow(2, retryCount) * 1000);
-                const jitter = Math.random() * 1000;
-                const finalDelay = exponentialDelay + jitter;
-
-                console.log(`[Retry ${retryCount}/${maxRetries}] Waiting ${Math.ceil(finalDelay/1000)} seconds before retry...`);
-                return finalDelay;
+                // Non-429: exponential backoff with jitter, capped at 60s
+                const delay = Math.min(60000, Math.pow(2, retryCount) * 1000);
+                return delay + Math.random() * 1000;
             },
             retryCondition: (error) => {
-                // Always retry on network errors
-                if (axiosRetry.isNetworkOrIdempotentRequestError(error)) {
-                    console.log('Network error detected, will retry...');
-                    return true;
-                }
-
-                // Always retry on rate limiting (429)
-                if (error.response && error.response.status === 429) {
-                    console.log('Rate limit (429) hit, will retry after delay...');
-                    return true;
-                }
-
-                // Retry on server errors (5xx)
-                if (error.response && error.response.status >= 500) {
-                    console.log(`Server error (${error.response.status}) detected, will retry...`);
-                    return true;
-                }
-
-                // Retry on timeout
-                if (error.code === 'ECONNABORTED') {
-                    console.log('Request timeout, will retry...');
-                    return true;
-                }
-
-                // Retry on specific network errors
-                if (['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ENETUNREACH', 'EAI_AGAIN'].includes(error.code)) {
-                    console.log(`Network error (${error.code}), will retry...`);
-                    return true;
-                }
-
-                // Don't retry client errors (4xx) except 429
-                if (error.response && error.response.status >= 400 && error.response.status < 500 && error.response.status !== 429) {
-                    console.log(`Client error (${error.response.status}), not retrying.`);
-                    return false;
-                }
-
+                if (axiosRetry.isNetworkOrIdempotentRequestError(error)) return true;
+                if (error.response?.status === 429) return true;
+                if (error.response?.status >= 500) return true;
+                if (['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND'].includes(error.code)) return true;
                 return false;
             },
-            shouldResetTimeout: true, // Reset timeout between retries
+            shouldResetTimeout: true,
             onRetry: (retryCount, error, requestConfig) => {
-                console.log(`[Retry ${retryCount}/${maxRetries}] Retrying ${requestConfig.method} ${requestConfig.url}`);
-                if (error.response?.headers) {
-                    const remaining = error.response.headers['x-ratelimit-remaining'];
-                    const limit = error.response.headers['x-ratelimit-limit'];
-                    if (remaining !== undefined && limit !== undefined) {
-                        console.log(`Rate limit: ${remaining}/${limit} remaining`);
-                    }
-                }
+                const status = error.response?.status || error.code;
+                console.log(`[Retry ${retryCount}/${maxRetries}] ${status} ${requestConfig.method} ${requestConfig.url}`);
             }
         });
     }
@@ -611,9 +594,13 @@ var JiraClient = module.exports = function (config) {
 
         const opts = translateOptions(options)
 
+        const schedule = this.limiter
+            ? (fn) => this.limiter.schedule(fn)
+            : (fn) => fn();
+
         if (callback) {
             try {
-                const response = await requestLib(opts)
+                const response = await schedule(() => requestLib(opts))
                 const body = response.data
                 if (typeof body === 'string') {
                     try {
@@ -632,7 +619,7 @@ var JiraClient = module.exports = function (config) {
                 const {
                     data: result,
                     status: statusCode
-                } = await requestLib(opts)
+                } = await schedule(() => requestLib(opts))
 
                 const error = statusCode < 200 || statusCode > 399;
 
