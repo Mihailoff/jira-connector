@@ -7,7 +7,7 @@ const url = require('url');
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const Bottleneck = require('bottleneck');
-const jwt = require('atlassian-jwt');
+const jwt = require('@atlassian/atlassian-jwt');
 const queryString = require('query-string');
 
 // Custom packages
@@ -546,7 +546,7 @@ var JiraClient = module.exports = function (config) {
             const pathname = new URL(options.uri).pathname;
             const nowInSeconds = Math.floor(Date.now() / 1000);
             const queryParam = queryString.parse(queryString.stringify(options.qs));
-            const jwtToken = jwt.encode({
+            const jwtToken = jwt.encodeSymmetric({
               iss: this.jwt.iss,
               iat: nowInSeconds,
               exp: nowInSeconds + this.jwt.expiry_time_seconds,

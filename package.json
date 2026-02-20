@@ -26,7 +26,7 @@
     "dtslint": "^3.6.8"
   },
   "dependencies": {
-    "atlassian-jwt": "^1.0.2",
+    "@atlassian/atlassian-jwt": "^2.0.3",
     "axios": "^1.11.0",
     "axios-retry": "^4.5.0",
     "bottleneck": "^2.19.5",
