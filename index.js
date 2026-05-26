@@ -601,7 +601,7 @@ var JiraClient = module.exports = function (config) {
         if (callback) {
             try {
                 const response = await schedule(() => requestLib(opts))
-                const body = response.data
+                let body = response.data
                 if (typeof body === 'string') {
                     try {
                         body = JSON.parse(body);
